@@ -1,0 +1,31 @@
+# Docker Compose - DIGIT-OCR
+# Usage: docker compose up --build
+
+services:
+
+  # ── Backend (FastAPI + TrOCR) ──────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: digit-ocr-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist the downloaded TrOCR model weights so they survive container restarts
+      - ./trained_models:/app/../trained_models
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+
+  # ── Frontend (React → Nginx) ────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: digit-ocr-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
