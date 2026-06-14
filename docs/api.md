@@ -40,15 +40,3 @@ Ví dụ JSON trả về khi có lỗi:
 }
 ```
 
-## 2. Endpoint: `/health`
-
-- **Phương thức:** `GET`
-- **Mô tả:** Kiểm tra trạng thái hoạt động của server.
-
-### Phản hồi (200 OK)
-
-```json
-{
-  "status": "ok"
-}
-```
