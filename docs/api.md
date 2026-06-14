@@ -10,11 +10,11 @@ Hệ thống cung cấp một endpoint chính để nhận diện văn bản (ch
 
 ### Tham số Request
 
-| Tên tham số | Loại | Bắt buộc | Mặc định | Mô tả |
-| :--- | :--- | :---: | :---: | :--- |
-| `file` | Form Data (File) | Có | - | Tệp hình ảnh chứa một hoặc nhiều dòng chữ số. Định dạng hỗ trợ: PNG, JPEG, JPG, BMP, TIFF. Tối đa 10MB. |
-| `max_new_tokens` | Query (int) | Không | 32 | Số ký tự tối đa mô hình có thể sinh ra trên mỗi dòng (từ 1 đến 256). |
-| `num_beams` | Query (int) | Không | 1 | Kích thước Beam Search khi sinh chữ. Giá trị cao hơn cho kết quả chính xác hơn nhưng chậm hơn (từ 1 đến 10). |
+| Tên tham số | Loại | Mặc định | Mô tả |
+| :--- | :--- | :---: | :--- |
+| `file` | Form Data (File) | - | Tệp hình ảnh chứa một hoặc nhiều dòng chữ số. Định dạng hỗ trợ: PNG, JPEG, JPG, BMP, TIFF. Tối đa 10MB. |
+| `max_new_tokens` | Query (int) | 32 | Số ký tự tối đa mô hình có thể sinh ra trên mỗi dòng (từ 1 đến 256). |
+| `num_beams` | Query (int) | 1 | Kích thước Beam Search khi sinh chữ. Giá trị cao hơn cho kết quả chính xác hơn nhưng chậm hơn (từ 1 đến 10). |
 
 ### Phản hồi (Response) thành công (200 OK)
 
