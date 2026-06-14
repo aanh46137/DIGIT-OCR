@@ -133,11 +133,11 @@ Accepts an image upload and returns recognized digit text.
 
 **Request:** `multipart/form-data`
 
-| Field | Type | Required | Default | Description |
-|---|---|:---:|:---:|---|
-| `file` | File | ✅ | — | Image file (PNG, JPEG, BMP, TIFF). Max 10 MB. |
-| `max_new_tokens` | int | ❌ | 32 | Max characters generated per line (1–256) |
-| `num_beams` | int | ❌ | 1 | Beam search width — higher = more accurate, slower (1–10) |
+| Field | Type | Default | Description |
+|---|---|:---:|---|
+| `file` | File | — | Image file (PNG, JPEG, BMP, TIFF). Max 10 MB. |
+| `max_new_tokens` | int | 32 | Max characters generated per line (1–256) |
+| `num_beams` | int | 1 | Beam search width — higher = more accurate, slower (1–10) |
 
 **Response (200 OK):**
 
