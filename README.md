@@ -150,14 +150,6 @@ Accepts an image upload and returns recognized digit text.
 
 The `prediction` field contains real newline characters (`\n`) between each recognized line.
 
-### `GET /health`
-
-```json
-{ "status": "ok" }
-```
-
----
-
 ## ⚙️ OCR Pipeline
 
 ```
