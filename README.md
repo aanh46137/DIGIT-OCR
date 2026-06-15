@@ -81,7 +81,7 @@ DIGIT-OCR/
 ### 1. Clone the repository
 
 ```bash
-git clone <your-repo-url>
+git clone [<your-repo-url>](https://github.com/aanh46137/DIGIT-OCR.git)
 cd DIGIT-OCR
 ```
 
