@@ -23,19 +23,19 @@ Người dùng upload ảnh
 │  Prediction Service │  Điều phối toàn bộ pipeline xử lý
 └────────┬────────────┘
          │
-    ┌────┴────┐
-    ▼         ▼
-┌────────┐ ┌──────────────┐
+    ┌────┴───────┐
+    ▼            ▼
+┌────────┐ ┌───────────────┐
 │ Image  │ │    Line       │
 │ Decode │ │ Segmentation  │
 │ + Otsu │ │ (Projection)  │
-└───┬────┘ └──────┬───────┘
+└───┬────┘ └──────┬────────┘
     └──────┬──────┘
            ▼
-    ┌──────────────┐
-    │  TrOCR Model │  Nhận diện text cho từng dòng
+    ┌───────────────┐
+    │  TrOCR Model  │  Nhận diện text cho từng dòng
     │  (HuggingFace)│
-    └──────┬───────┘
+    └──────┬────────┘
            ▼
     Ghép kết quả các dòng bằng ký tự xuống dòng (\n)
            │
