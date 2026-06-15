@@ -1,65 +1,111 @@
-# Workflow phát triển (Development Workflow)
+# Quy trình hoạt động (Workflow)
 
-Tài liệu này hướng dẫn cách thiết lập môi trường và chạy dự án DIGIT OCR ở chế độ phát triển (development).
+Tài liệu mô tả quy trình xử lý tổng quan của hệ thống Digit OCR, từ khi người dùng upload ảnh cho đến khi nhận được kết quả nhận diện.
 
-## 1. Yêu cầu hệ thống
+## 1. Tổng quan Pipeline
 
-- Python 3.9+ 
-- Node.js 18+ (Kèm theo npm hoặc yarn)
-- Môi trường nên có đủ RAM để chứa mô hình TrOCR (cần khoảng 1.5GB không gian đĩa và bộ nhớ để khởi chạy dự án mượt mà). Không bắt buộc có GPU, mã nguồn sẽ tự nhận diện và dùng CPU nếu không có.
-
-## 2. Setup môi trường Backend
-
-Sử dụng môi trường ảo (`.venv`) để đảm bảo không bị xung đột với các package Python khác của hệ thống.
-
-```bash
-# Di chuyển vào gốc dự án và tạo môi trường ảo
-python -m venv .venv
-
-# Kích hoạt môi trường ảo (Trên Windows PowerShell)
-.venv\Scripts\Activate.ps1
-
-# Hoặc kích hoạt môi trường ảo (Trên Linux/MacOS)
-source .venv/bin/activate
-
-# Cài đặt các thư viện cần thiết
-pip install -r backend/requirements.txt
+```
+Người dùng upload ảnh
+        │
+        ▼
+┌─────────────────────┐
+│   Frontend (React)  │  Gửi ảnh qua HTTP POST /predict
+└────────┬────────────┘
+         │
+         ▼
+┌─────────────────────┐
+│  FastAPI Router     │  Kiểm tra định dạng & kích thước file
+│  (prediction.py)    │
+└────────┬────────────┘
+         │
+         ▼
+┌─────────────────────┐
+│  Prediction Service │  Điều phối toàn bộ pipeline xử lý
+└────────┬────────────┘
+         │
+    ┌────┴────┐
+    ▼         ▼
+┌────────┐ ┌──────────────┐
+│ Image  │ │    Line       │
+│ Decode │ │ Segmentation  │
+│ + Otsu │ │ (Projection)  │
+└───┬────┘ └──────┬───────┘
+    └──────┬──────┘
+           ▼
+    ┌──────────────┐
+    │  TrOCR Model │  Nhận diện text cho từng dòng
+    │  (HuggingFace)│
+    └──────┬───────┘
+           ▼
+    Ghép kết quả các dòng bằng ký tự xuống dòng (\n)
+           │
+           ▼
+    Trả JSON response về Frontend
 ```
 
-## 3. Khởi động Backend
+## 2. Chi tiết từng bước
 
-Backend chạy bằng FastAPI và Uvicorn. Khi server khởi động ở lần đầu tiên, sẽ mất vài phút để hệ thống tiến hành tải mô hình AI từ nền tảng Hugging Face. 
-Mô hình TrOCR sẽ tự động được hệ thống lưu lại vào folder `trained_models/trocr/` ở những lần khởi chạy sau.
+### Bước 1 — Upload ảnh (Frontend)
 
-```bash
-cd backend
-uvicorn app.main:app --reload
+Người dùng kéo-thả hoặc chọn file ảnh chữ số viết tay trên giao diện web. File được đọc vào bộ nhớ dưới dạng `ArrayBuffer` rồi gửi đến Backend qua HTTP `POST /predict` dưới dạng `multipart/form-data`.
+
+### Bước 2 — Nhận & kiểm tra file (Router)
+
+FastAPI router (`prediction.py`) nhận file và thực hiện kiểm tra:
+- Định dạng file phải là PNG, JPEG, BMP hoặc TIFF.
+- Kích thước file không vượt quá 10MB.
+- File không được rỗng.
+
+Nếu hợp lệ, chuyển tiếp bytes ảnh sang Prediction Service.
+
+### Bước 3 — Giải mã ảnh (Image Decode)
+
+Hàm `bytes_to_grayscale()` trong `image_processing.py` giải mã chuỗi bytes thành ảnh grayscale (đen trắng, 1 kênh màu) bằng OpenCV.
+
+### Bước 4 — Nhị phân hóa (Binarization)
+
+Hàm `binarize()` áp dụng ngưỡng Otsu để chuyển ảnh grayscale thành ảnh nhị phân:
+- Nét mực (chữ viết) → pixel trắng (255)
+- Nền giấy → pixel đen (0)
+
+Mục đích: Tạo đầu vào sạch cho bước tách dòng tiếp theo.
+
+### Bước 5 — Tách dòng văn bản (Line Segmentation)
+
+Hàm `detect_lines()` trong `digit_detection.py` sử dụng phương pháp **Horizontal Projection Profile**:
+1. Tính tổng pixel trắng theo từng hàng ngang của ảnh nhị phân.
+2. Hàng nào có nhiều pixel trắng → thuộc vùng chứa chữ.
+3. Hàng nào gần như toàn đen → khoảng trống giữa các dòng.
+4. Xác định ranh giới (y_start, y_end) của từng dòng, thêm padding và trả về danh sách `LineBox`.
+
+### Bước 6 — Nhận diện từng dòng bằng TrOCR
+
+Với mỗi `LineBox` được phát hiện:
+1. Cắt vùng ảnh tương ứng từ ảnh grayscale gốc bằng `crop_to_pil_rgb()`.
+2. Chuyển đổi sang ảnh PIL RGB (định dạng đầu vào mà TrOCR yêu cầu).
+3. Truyền ảnh qua `TrOCRProcessor` để chuyển thành tensor `pixel_values`.
+4. Đưa tensor vào `VisionEncoderDecoderModel` để sinh ra chuỗi ký tự bằng Beam Search.
+5. Giải mã token IDs thành chuỗi text rõ ràng (readable text).
+
+### Bước 7 — Ghép kết quả & trả về
+
+Tất cả chuỗi text của các dòng được nối lại bằng ký tự xuống dòng thực (`\n`), đóng gói thành JSON response:
+
+```json
+{
+  "filename": "test_image.jpg",
+  "prediction": "0123456\n789"
+}
 ```
 
-- Server sẽ hoạt động ở địa chỉ: `http://localhost:8000`
-- API Document tự động của FastAPI có sẵn ở: `http://localhost:8000/docs`
+Frontend nhận response, hiển thị kết quả với `white-space: pre-line` để `\n` được render thành xuống dòng thật trên giao diện.
 
-## 4. Setup và Khởi động Frontend
+## 3. Khởi động Server (Startup Flow)
 
-Frontend sử dụng React và công cụ build Vite.
-
-```bash
-# Chuyển thư mục
-cd frontend
-
-# Cài đặt thư viện (nếu mới clone code lần đầu)
-npm install
-
-# Khởi chạy giao diện website
-npm run dev
-```
-
-- Website hiển thị mặc định ở địa chỉ: `http://localhost:5173`
-- Lưu ý: Frontend sử dụng Proxy qua API để gọi ngược về `localhost:8000/predict`. Nếu Backend bị tắt, ứng dụng Frontend sẽ hiển thị lỗi cảnh báo.
-
-## 5. Sử dụng Ứng dụng
-
-1. Truy cập vào trang web frontend `http://localhost:5173`.
-2. Kéo-thả (hoặc nhấn nút Browse) để tải file hình ảnh có chứa chữ số viết tay. (Nên dùng hình ảnh có độ phân giải rõ).
-3. Ấn nút Predict để Backend thực hiện xử lý hình ảnh và dự đoán kết quả bằng mô hình AI.
-4. Giao diện sẽ trả về văn bản với cấu trúc xuống dòng y hệt ảnh thực tế.
+Khi Uvicorn khởi động:
+1. FastAPI gọi sự kiện `on_startup` → hàm `warmup()`.
+2. `warmup()` gọi `_load()` trong `model_loader.py`.
+3. `_load()` kiểm tra thư mục `trained_models/trocr/`:
+   - **Có file** → Load model từ ổ đĩa nội bộ (nhanh, ~18 giây, không cần mạng).
+   - **Không có** → Tải model từ Hugging Face, sau đó lưu vào `trained_models/trocr/` cho lần sau.
+4. Model được giữ trong bộ nhớ (RAM/GPU) suốt vòng đời server, phục vụ mọi request mà không cần load lại.
