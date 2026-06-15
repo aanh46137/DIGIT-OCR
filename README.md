@@ -189,4 +189,4 @@ Uploaded Image (bytes)
 
 - [`docs/api.md`](docs/api.md) — Full API reference
 - [`docs/architecture.md`](docs/architecture.md) — System architecture & pipeline details
-- [`docs/workflow.md`](docs/workflow.md) — Development setup guide
+- [`docs/workflow.md`](docs/workflow.md) — Development setup guide 
