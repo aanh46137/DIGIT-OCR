@@ -22,9 +22,8 @@ MODEL_NAME = "microsoft/trocr-base-handwritten"
 # Local path: backend/app/models/ -> backend/ -> DIGIT-OCR/ -> trained_models/trocr/
 LOCAL_MODEL_DIR = Path(__file__).resolve().parents[3] / "trained_models" / "trocr"
 
-# Generation params (override per-request if needed via prediction_service)
-DEFAULT_MAX_NEW_TOKENS = 32 #64
-DEFAULT_BEAM_SIZE = 1 #4
+DEFAULT_MAX_NEW_TOKENS = 128
+DEFAULT_BEAM_SIZE = 4
 
 # ── Module-level singletons (lazy-loaded) ────────────────────────────────────
 _processor: TrOCRProcessor | None = None
@@ -108,4 +107,3 @@ def warmup() -> None:
     when the server boots, not on the first incoming request.
     """
     _load()
-

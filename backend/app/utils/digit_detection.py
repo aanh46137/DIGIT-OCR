@@ -1,24 +1,29 @@
 """
 -------------------
-Line segmentation for multi-line digit-sequence images, using a horizontal
-projection profile (sum of "ink" pixels per row). Splits an image into
-per-line crops that can be fed individually to TrOCR.
-
-If your handwriting is heavily skewed, consider replacing this with a
-proper line-detection model (e.g. doctr's detection_predictor) — this
-module exposes a simple `LineBox` interface so that swap is localized.
+Line segmentation using Advanced OpenCV Contour Detection (Multi-layer Filtering).
+Identifies character blobs, groups them vertically into rows, and applies
+rigorous noise reduction (character-level and line-level density checks)
+to eliminate hallucinations caused by margin artifacts or paper texture.
+Excellent for dense, handwritten digit grids.
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
+import cv2
 import numpy as np
 
-# ── Tunable defaults ──────────────────────────────────────────────────────────
-MIN_LINE_HEIGHT = 15        # ignore bands shorter than this (pixels)
-ROW_INK_THRESHOLD = 0.5     # fraction of max row-ink to count as "has text"
-PADDING = 6                 # extra pixels above/below each cropped line
+logger = logging.getLogger(__name__)
+
+MIN_CONTOUR_AREA = 80       
+MIN_CONTOUR_HEIGHT = 20    
+MAX_CHAR_ASPECT_RATIO = 2.5 
+
+PADDING = 6                 
+ROW_TOLERANCE_RATIO = 0.6   
+MIN_LINE_DENSITY = 0.02     
 
 
 @dataclass(frozen=True)
@@ -34,49 +39,101 @@ class LineBox:
 
 def detect_lines(
     binary: np.ndarray,
-    min_line_height: int = MIN_LINE_HEIGHT,
-    row_ink_threshold: float = ROW_INK_THRESHOLD,
     padding: int = PADDING,
+    min_area: int = MIN_CONTOUR_AREA,
+    min_height: int = MIN_CONTOUR_HEIGHT,
 ) -> list[LineBox]:
-    """
-    Given a binarized image (text=255, background=0), return a list of
-    LineBox objects describing each detected text line, padded and
-    clamped to the image bounds.
-    """
-    h, _ = binary.shape
+    h_img, w_img = binary.shape
 
-    row_sums = binary.sum(axis=1).astype(np.float32)
-    if row_sums.max() == 0:
+    # --- TẦNG 1: Xử lý và lọc Contour Character-level ---
+
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 3))
+    dilated = cv2.dilate(binary, kernel, iterations=1)
+
+    contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    boxes = []
+    for cnt in contours:
+        x, y, w, h = cv2.boundingRect(cnt)
+        
+        # 1.1 Lọc Diện tích
+        if cv2.contourArea(cnt) < min_area:
+            continue
+            
+        # 1.2 Lọc Chiều cao mảnh
+        if h < min_height:
+            continue
+            
+        # 1.3 Lọc Aspect Ratio (Chống vệt margin hoặc nét kẻ ngang)
+        aspect_ratio = w / float(h)
+        if aspect_ratio > MAX_CHAR_ASPECT_RATIO:
+            continue
+            
+        boxes.append((x, y, w, h))
+
+    if not boxes:
+        logger.warning("No valid character contours found after character-level filtering.")
         return []
 
-    threshold = row_sums.max() * row_ink_threshold * 0.05
-    has_text = row_sums > threshold
+    boxes.sort(key=lambda b: b[1] + (b[3] / 2)) 
 
-    bounds: list[tuple[int, int]] = []
-    in_band = False
-    start = 0
+    lines = []
+    current_line = [boxes[0]]
 
-    for y, val in enumerate(has_text):
-        if val and not in_band:
-            start = y
-            in_band = True
-        elif not val and in_band:
-            end = y
-            if end - start >= min_line_height:
-                bounds.append((start, end))
-            in_band = False
+    for box in boxes[1:]:
+        x, y, w, h = box
+        cy = y + h / 2
 
-    if in_band:
-        end = len(has_text)
-        if end - start >= min_line_height:
-            bounds.append((start, end))
+        avg_cy = sum(b[1] + b[3] / 2 for b in current_line) / len(current_line)
+        avg_h = sum(b[3] for b in current_line) / len(current_line)
 
-    # Apply padding, clamp to image bounds
+        if abs(cy - avg_cy) < (avg_h * ROW_TOLERANCE_RATIO):
+            current_line.append(box)
+        else:
+            lines.append(current_line)
+            current_line = [box]
+
+    if current_line:
+        lines.append(current_line)
+
     line_boxes = []
-    for (y0, y1) in bounds:
-        y0p = max(0, y0 - padding)
-        y1p = min(h, y1 + padding)
+    
+    for i, line_chars in enumerate(lines, 1):
+        # Xác định đỉnh và đáy thực tế của dòng
+        y_min = min(b[1] for b in line_chars)
+        y_max = max(b[1] + b[3] for b in line_chars)
+        line_h = y_max - y_min
+        
+        # TẦNG 2: Lọc dòng quá mỏng 
+        if line_h < min_height:
+            logger.debug(f"Rejecting line {i}: height {line_h}px < {min_height}px.")
+            continue
+
+        y0_raw = max(0, int(y_min))
+        y1_raw = min(h_img, int(y_max))
+        
+        if y1_raw <= y0_raw:
+            continue
+            
+        roi_binary = binary[y0_raw:y1_raw, 0:w_img]
+        
+        # TẦNG 3: Kiểm tra mật độ (GIẢI PHÁP TRIỆT ĐỂ)
+        num_black_pixels = np.sum(roi_binary == 255)
+        total_roi_pixels = roi_binary.size if roi_binary.size > 0 else 1 
+        
+        density = num_black_pixels / float(total_roi_pixels)
+        
+        if density < MIN_LINE_DENSITY:
+            logger.debug(f"Rejecting hallucinated line {i}: Density {density:.5f} < {MIN_LINE_DENSITY}.")
+            continue 
+
+        y0p = max(0, int(y_min - padding))
+        y1p = min(h_img, int(y_max + padding))
+        
         line_boxes.append(LineBox(y_start=y0p, y_end=y1p))
 
-    return line_boxes
+    line_boxes.sort(key=lambda lb: lb.y_start)
+    
+    logger.info(f"Detected {len(line_boxes)} valid lines after advanced multi-layer filtering.")
 
+    return line_boxes
