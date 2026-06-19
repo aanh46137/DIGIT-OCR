@@ -42,29 +42,34 @@ DIGIT-OCR/
 │   │   ├── routers/
 │   │   │   └── prediction.py          # POST /predict endpoint
 │   │   ├── services/
-│   │   │   └── prediction_service.py  # OCR pipeline orchestration
+│   │   │   └── prediction_service.py  # OCR pipeline orchestration (batch)
 │   │   ├── models/
 │   │   │   └── model_loader.py        # TrOCR loader with local caching
 │   │   ├── schemas/
 │   │   │   └── prediction_response.py # Pydantic response models
 │   │   └── utils/
-│   │       ├── image_processing.py    # Decode, grayscale, binarize
-│   │       └── digit_detection.py     # Horizontal projection line segmentation
+│   │       ├── image_processing.py    # Decode, resize, adaptive binarize
+│   │       ├── digit_detection.py     # Contour-based line segmentation
+│   │       └── text_postprocess.py    # Filter output to digits only (0-9)
+│   ├── Dockerfile
 │   └── requirements.txt
 ├── frontend/
-│   └── src/
-│       ├── App.jsx
-│       ├── components/
-│       │   ├── UploadImage.jsx        # Drag-and-drop upload
-│       │   └── ResultPanel.jsx        # Prediction display
-│       └── services/
-│           └── api.js                 # Axios API calls
+│   ├── src/
+│   │   ├── App.jsx
+│   │   ├── components/
+│   │   │   ├── UploadImage.jsx        # Drag-and-drop upload
+│   │   │   ├── DrawImage.jsx          # Image preview & display
+│   │   │   └── ResultPanel.jsx        # Prediction display
+│   │   └── services/
+│   │       └── api.js                 # Axios API calls
+│   └── Dockerfile
 ├── trained_models/
 │   └── trocr/                         # Auto-populated on first run
 ├── docs/
 │   ├── api.md
 │   ├── architecture.md
 │   └── workflow.md
+├── docker-compose.yml
 └── .gitignore
 ```
 
@@ -156,16 +161,26 @@ The `prediction` field contains real newline characters (`\n`) between each reco
 Uploaded Image (bytes)
         │
         ▼
-  Decode → Grayscale (OpenCV)
+  Decode → Grayscale → Resize (width=1024)
         │
         ▼
-  Otsu Binarization (ink=255, background=0)
+  Adaptive Gaussian Binarization (ink=255, bg=0)
+  + Clear border noise
         │
         ▼
-  Horizontal Projection → Line Segmentation
+  Contour Detection → 3-Layer Line Segmentation
+  (area / height / aspect-ratio / density filters)
         │
-        ├── Line 1 crop ──► TrOCR → "0123456"
-        ├── Line 2 crop ──► TrOCR → "789"
+        ├── [Line 1, Line 2, ..., Line N] (LineBox list)
+        │
+        ▼
+  Batch TrOCR Inference (≤8 crops/batch)
+        │
+        ▼
+  Text Post-processing (digits 0-9 only)
+        │
+        ├── Line 1 → "0123456"
+        ├── Line 2 → "789"
         └── ...
         │
         ▼
@@ -187,6 +202,6 @@ Uploaded Image (bytes)
 
 ## 📄 Documentation
 
-- [`docs/api.md`](docs/api.md) — Full API reference
+- [`docs/api.md`](docs/api.md) — Full API reference (endpoints, params, error codes)
 - [`docs/architecture.md`](docs/architecture.md) — System architecture & pipeline details
-- [`docs/workflow.md`](docs/workflow.md) — Development setup guide 
+- [`docs/workflow.md`](docs/workflow.md) — Step-by-step processing workflow
