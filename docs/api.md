@@ -48,15 +48,4 @@ Ví dụ JSON trả về khi có lỗi:
 
 ---
 
-## 2. Endpoint: `GET /health`
 
-- **Phương thức:** `GET`
-- **Mô tả:** Kiểm tra trạng thái hoạt động của server. Không yêu cầu tham số. Dùng để health-check trong Docker hoặc deployment.
-
-### Phản hồi thành công (200 OK)
-
-```json
-{
-  "status": "ok"
-}
-```
